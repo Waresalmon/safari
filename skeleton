@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pixel Farm & Mine Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1a1a1a; font-family: 'Inter', sans-serif; touch-action: none; }
+        canvas { image-rendering: pixelated; display: block; background: #000; }
+        .pixel-font { font-family: 'Press+Start+2P', cursive; font-size: 10px; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        .pointer-events-auto { pointer-events: auto; }
+        #character-creator { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.95); z-index: 1000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(10px); }
+        .tool-btn.active { transform: scale(1.1); border-color: white; box-shadow: 0 0 15px rgba(255,255,255,0.5); }
+    </style>
+</head>
+<body>
+
+<div id="game-container" class="relative w-screen h-screen">
+    <div id="character-creator">
+        <div class="bg-[#2a2a2a] p-8 rounded-2xl border-4 border-[#444] max-w-4xl w-full flex flex-col md:flex-row gap-8">
+            <div class="flex-1 flex flex-col items-center">
+                <h1 class="pixel-font text-yellow-400 mb-6 text-xl text-center">CREATE EXPLORER</h1>
+                <canvas id="previewCanvas" width="128" height="160" class="mb-6 bg-slate-800 rounded-lg shadow-inner"></canvas>
+                <button onclick="startGame()" class="pixel-font bg-green-600 hover:bg-green-500 text-white px-8 py-4 rounded border-b-4 border-green-800 active:translate-y-1 transition-all w-full text-[12px]">START ADVENTURE</button>
+            </div>
+            
+            <div class="flex-1 space-y-4 text-white overflow-y-auto max-h-[70vh] pr-4 pointer-events-auto">
+                <div class="space-y-2">
+                    <label class="block text-[10px] uppercase text-gray-400 font-bold">Gender Identity</label>
+                    <div class="flex gap-2">
+                        <button onclick="setCustom('gender', 'male')" class="flex-1 bg-gray-700 px-3 py-2 rounded text-[10px] border-b-4 border-black hover:bg-blue-600">MALE</button>
+                        <button onclick="setCustom('gender', 'female')" class="flex-1 bg-gray-700 px-3 py-2 rounded text-[10px] border-b-4 border-black hover:bg-pink-600">FEMALE</button>
+                        <button onclick="setCustom('gender', 'nb')" class="flex-1 bg-gray-700 px-3 py-2 rounded text-[10px] border-b-4 border-black hover:bg-purple-600">NB</button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div><label class="block text-[10px] text-gray-400">Skin Tone</label><input type="color" oninput="setCustom('skin', this.value)" value="#fcd34d" class="w-full h-10 rounded cursor-pointer bg-transparent"></div>
+                    <div><label class="block text-[10px] text-gray-400">Eye Color</label><input type="color" oninput="setCustom('eyes', this.value)" value="#1e293b" class="w-full h-10 rounded cursor-pointer bg-transparent"></div>
+                    <div><label class="block text-[10px] text-gray-400">Hair Color</label><input type="color" oninput="setCustom('hairColor', this.value)" value="#451a03" class="w-full h-10 rounded cursor-pointer bg-transparent"></div>
+                    <div><label class="block text-[10px] text-gray-400">Outfit</label><input type="color" oninput="setCustom('clothes', this.value)" value="#3b82f6" class="w-full h-10 rounded cursor-pointer bg-transparent"></div>
+                </div>
+
+                <div class="space-y-2">
+                    <label class="block text-[10px] text-gray-400">Hair Style</label>
+                    <select onchange="setCustom('hairStyle', this.value)" class="bg-gray-700 w-full p-3 rounded text-[10px] outline-none border-b-4 border-black">
+                        <option value="short">Short Trim</option>
+                        <option value="long">Long Flow</option>
+                        <option value="spike">Spiky</option>
+                        <option value="bob">Bob Cut</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="creature-modal" class="fixed inset-0 hidden flex items-center justify-center p-6 pointer-events-auto" style="z-index: 2000;">
+        <div class="bg-gray-900 border-4 border-gray-700 w-full max-w-2xl p-6 rounded-xl text-white">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="pixel-font text-xl text-blue-400">CREATURE ROSTER</h2>
+                <button onclick="toggleCreatureModal()" class="bg-red-600 px-3 py-1 pixel-font text-[8px] rounded">CLOSE</button>
+            </div>
+            <div id="creature-list" class="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto pr-2"></div>
+        </div>
+    </div>
+
+    <div id="ui-layer" class="p-6 flex flex-col justify-between">
+        <div class="flex justify-between items-start">
+            <div class="bg-black/80 text-white p-4 rounded-xl border-2 border-white/20 pointer-events-auto backdrop-blur-sm">
+                <h2 class="pixel-font mb-3 text-yellow-400">ZONE: <span id="zone-name">Wilds</span></h2>
+                <div class="text-[10px] mb-1">Captured: <span id="creature-count" class="text-green-400">0</span></div>
+                <div class="text-[10px] mb-1">Resources: <span id="resource-count" class="text-blue-400">100</span></div>
+                <div id="mine-stats" class="hidden text-[10px] mb-3 text-orange-400">Floor: <span id="mine-depth">0</span></div>
+                <button onclick="toggleCreatureModal()" class="pixel-font bg-blue-600 hover:bg-blue-500 text-[8px] p-2 rounded pointer-events-auto w-full">VIEW CREATURES</button>
+            </div>
+
+            <div id="minimap-container" class="pointer-events-auto relative shadow-2xl">
+                <canvas id="minimapCanvas" width="160" height="160"></canvas>
+            </div>
+        </div>
+
+        <div id="notifications" class="flex flex-col items-center gap-2"></div>
+
+        <div class="flex flex-col items-center gap-6">
+            <div id="hotbar" class="flex gap-4 pointer-events-auto bg-black/60 p-3 rounded-2xl border border-white/20 backdrop-blur-md">
+                <button id="btn-capture" onclick="selectTool('capture')" class="tool-btn active w-14 h-14 bg-red-600 rounded-xl flex items-center justify-center text-2xl" title="Capture Ball">🔴</button>
+                <button id="btn-hoe" onclick="selectTool('hoe')" class="tool-btn w-14 h-14 bg-amber-800 rounded-xl flex items-center justify-center text-2xl" title="Hoe">🌾</button>
+                <button id="btn-pickaxe" onclick="selectTool('pickaxe')" class="tool-btn w-14 h-14 bg-slate-600 rounded-xl flex items-center justify-center text-2xl" title="Pickaxe">⛏️</button>
+                <button id="btn-assign" onclick="selectTool('assign')" class="tool-btn w-14 h-14 bg-blue-600 rounded-xl flex items-center justify-center text-2xl" title="Assign Worker">🤝</button>
+            </div>
+            <div class="text-white/60 text-[8px] pixel-font pointer-events-none bg-black/40 px-6 py-2 rounded-full">WASD: Move | Scroll: Switch Tools | Click: Use Tool</div>
+        </div>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const mCanvas = document.getElementById('minimapCanvas');
+const mCtx = mCanvas.getContext('2d');
+
+const TILE_SIZE = 64;
+const MAP_SIZE = 60; 
+const MINE_SIZE = 25; 
+const WORLD_PIXELS = MAP_SIZE * TILE_SIZE;
+const TOOLS = ['capture', 'hoe', 'pickaxe', 'assign'];
+
+const state = {
+    gameStarted: false,
+    view: 'world', 
+    frame: 0,
+    camera: { x: 0, y: 0 },
+    keys: {},
+    player: {
+        x: WORLD_PIXELS / 2,
+        y: WORLD_PIXELS / 2,
+        speed: 5,
+        moving: false,
+        dir: 'down', 
+        animFrame: 0,
+        toolFrame: 0,
+        isUsingTool: false,
+        customization: {
+            gender: 'nb',
+            skin: '#fcd34d',
+            eyes: '#1e293b',
+            hairColor: '#451a03',
+            hairStyle: 'short',
+            clothes: '#3b82f6'
+        }
+    },
+    resources: 100,
+    inventory: { stone: 0, copper: 0, gems: 0, dirt: 0 },
+    grid: [],
+    creatures: [],
+    capturedList: [],
+    capturedCount: 0,
+    selectedTool: 'capture',
+    mine: {
+        currentFloor: 0,
+        floors: []
+    },
+    transitioning: false // Prevents rapid teleportation
+};
+
+function drawPlayer(context, x, y, custom, isWalking = false, frame = 0, dir = 'down', isUsingTool = false, toolFrame = 0) {
+    const walkBob = isWalking ? Math.sin(frame * 0.2) * 2 : 0;
+    const legSwing = isWalking ? Math.sin(frame * 0.2) * 4 : 0;
+    const toolSwing = isUsingTool ? Math.sin(toolFrame * 0.3) * 15 : 0;
+    
+    context.save();
+    context.translate(x, y + walkBob);
+
+    // Shadow
+    context.fillStyle = 'rgba(0,0,0,0.2)';
+    context.beginPath();
+    context.ellipse(16, 44, 12, 4, 0, 0, Math.PI * 2);
+    context.fill();
+
+    // Legs
+    context.fillStyle = '#262626';
+    if (dir === 'left' || dir === 'right') {
+        context.fillRect(10 - legSwing, 32, 6, 12);
+        context.fillRect(16 + legSwing, 32, 6, 12);
+    } else {
+        context.fillRect(8 - (legSwing/2), 32, 6, 12);
+        context.fillRect(18 + (legSwing/2), 32, 6, 12);
+    }
+
+    // Torso
+    context.fillStyle = custom.clothes;
+    context.beginPath();
+    context.roundRect(6, 16, 20, 18, [4, 4, 2, 2]);
+    context.fill();
+    
+    // Arms
+    context.fillStyle = custom.skin;
+    if (dir === 'down') {
+        context.fillRect(2, 18 + (legSwing/2), 4, 12); 
+        context.fillRect(26, 18 - (legSwing/2) - toolSwing, 4, 12); 
+    } else if (dir === 'up') {
+        context.fillRect(2, 18 - (legSwing/2), 4, 12);
+        context.fillRect(26, 18 + (legSwing/2), 4, 12);
+    } else if (dir === 'right') {
+        context.fillRect(12, 18 + (legSwing/2), 4, 12);
+        context.fillRect(24, 18 - (legSwing/2) - toolSwing, 4, 12);
+    } else if (dir === 'left') {
+        context.fillRect(16, 18 + (legSwing/2), 4, 12);
+        context.fillRect(4, 18 - (legSwing/2) - toolSwing, 4, 12);
+    }
+
+    // Head
+    context.fillStyle = custom.skin;
+    context.beginPath();
+    context.roundRect(8, 0, 16, 18, 8);
+    context.fill();
+
+    // Face details
+    if (dir !== 'up') {
+        context.fillStyle = custom.eyes;
+        if (dir === 'down') {
+            context.fillRect(11, 8, 3, 3);
+            context.fillRect(18, 8, 3, 3);
+        } else if (dir === 'right') {
+            context.fillRect(20, 8, 3, 3);
+        } else if (dir === 'left') {
+            context.fillRect(9, 8, 3, 3);
+        }
+    }
+
+    // Hair Style
+    context.fillStyle = custom.hairColor;
+    const hairH = (dir === 'up') ? 14 : 6;
+    if (custom.hairStyle === 'short') {
+        context.fillRect(8, -2, 16, hairH);
+    } else if (custom.hairStyle === 'long') {
+        context.fillRect(8, -2, 16, hairH);
+        context.fillRect(6, 4, 4, 24);
+        context.fillRect(22, 4, 4, 24);
+    } else if (custom.hairStyle === 'spike') {
+        for(let i=0; i<4; i++) context.fillRect(10 + i*4, -6, 3, 6);
+    } else if (custom.hairStyle === 'bob') {
+        context.fillRect(6, -2, 20, hairH + 2);
+        context.fillRect(6, 6, 4, 10);
+        context.fillRect(22, 6, 4, 10);
+    }
+    context.restore();
+}
+
+function initWorld() {
+    for (let y = 0; y < MAP_SIZE; y++) {
+        state.grid[y] = [];
+        for (let x = 0; x < MAP_SIZE; x++) {
+            let type = 'grass';
+            // Biome logic
+            if (x < 12 && y < 12) type = 'stone'; // Mine Zone
+            else if (x > 45 && y > 45) type = 'water'; // Lake Zone
+            else if (x === 25 || y === 25 || (x > 10 && x < 25 && y === 10)) type = 'path';
+
+            // Distinct Mine Entrance
+            if (x === 2 && y === 2) type = 'entrance';
+
+            const tufts = [];
+            if (type === 'grass') {
+                for(let i=0; i<3; i++) tufts.push({lx: Math.random()*TILE_SIZE, ly: Math.random()*TILE_SIZE, size: 5+Math.random()*10});
+            }
+
+            state.grid[y][x] = {
+                type, x, y, farmState: 'none', cropLevel: 0, tufts, building: false
+            };
+        }
+    }
+
+    // 20-Floor Mine Generation
+    for (let i = 0; i < 20; i++) {
+        state.mine.floors.push(generateMineFloor(i));
+    }
+
+    // Creature Spawning
+    const names = ["Bulby", "Stonee", "Glowy", "Mudd", "Leafy", "Peak"];
+    for (let i = 0; i < 30; i++) {
+        state.creatures.push({
+            name: names[Math.floor(Math.random() * names.length)] + " " + (i+1),
+            x: Math.random() * WORLD_PIXELS,
+            y: Math.random() * WORLD_PIXELS,
+            color: `hsl(${Math.random() * 360}, 70%, 60%)`,
+            captured: false,
+            task: 'idle',
+            stats: { farming: Math.random() * 100, mining: Math.random() * 100 },
+            vx: (Math.random() - 0.5) * 2,
+            vy: (Math.random() - 0.5) * 2
+        });
+    }
+}
+
+function generateMineFloor(depth) {
+    const floorSize = 25;
+    const floor = { depth, grid: [], ladders: { down: {x: floorSize-4, y: floorSize-4}, up: {x: 4, y: 4} } };
+    const oreChance = 0.05 + (depth * 0.02);
+    
+    for (let y = 0; y < floorSize; y++) {
+        floor.grid[y] = [];
+        for (let x = 0; x < floorSize; x++) {
+            let type = 'empty';
+            const roll = Math.random();
+            if (x === 0 || x === floorSize-1 || y === 0 || y === floorSize-1) type = 'wall';
+            else if (roll < 0.02) type = 'gem';
+            else if (roll < 0.02 + oreChance) type = 'copper';
+            else if (roll < 0.2) type = 'dirt';
+            else if (roll < 0.4) type = 'rock';
+
+            // Clear paths near ladders
+            if ((Math.abs(x-floor.ladders.down.x)<2 && Math.abs(y-floor.ladders.down.y)<2) || 
+                (Math.abs(x-floor.ladders.up.x)<2 && Math.abs(y-floor.ladders.up.y)<2)) type = 'empty';
+
+            floor.grid[y][x] = { type, x, y, hp: 3 };
+        }
+    }
+    return floor;
+}
+
+function update() {
+    if (!state.gameStarted) return;
+    
+    let dx = 0, dy = 0;
+    state.player.moving = false;
+    if (state.keys['KeyW'] || state.keys['ArrowUp']) { dy -= state.player.speed; state.player.dir = 'up'; state.player.moving = true; }
+    else if (state.keys['KeyS'] || state.keys['ArrowDown']) { dy += state.player.speed; state.player.dir = 'down'; state.player.moving = true; }
+    if (state.keys['KeyA'] || state.keys['ArrowLeft']) { dx -= state.player.speed; state.player.dir = 'left'; state.player.moving = true; }
+    else if (state.keys['KeyD'] || state.keys['ArrowRight']) { dx += state.player.speed; state.player.dir = 'right'; state.player.moving = true; }
+
+    if (state.player.moving) {
+        const nextX = state.player.x + dx;
+        const nextY = state.player.y + dy;
+        const gx = Math.floor(nextX / TILE_SIZE);
+        const gy = Math.floor(nextY / TILE_SIZE);
+        
+        if (state.view === 'world') {
+            if (gx >= 0 && gx < MAP_SIZE && gy >= 0 && gy < MAP_SIZE && state.grid[gy][gx].type !== 'water') {
+                state.player.x = nextX; state.player.y = nextY;
+            }
+            // Enter Mine Transition
+            if (gx === 2 && gy === 2 && !state.transitioning) {
+                state.view = 'mine';
+                state.mine.currentFloor = 0;
+                // Place player safely to the right of the up-ladder
+                state.player.x = (state.mine.floors[0].ladders.up.x + 1.5) * TILE_SIZE; 
+                state.player.y = (state.mine.floors[0].ladders.up.y + 0.5) * TILE_SIZE;
+                document.getElementById('mine-stats').classList.remove('hidden');
+                state.transitioning = true;
+                setTimeout(() => state.transitioning = false, 500);
+            }
+        } else {
+            const floor = state.mine.floors[state.mine.currentFloor];
+            if (gx >= 0 && gx < 25 && gy >= 0 && gy < 25 && floor.grid[gy][gx].type === 'empty') {
+                state.player.x = nextX; state.player.y = nextY;
+            }
+            // Ladder Transition Checks
+            if (!state.transitioning) {
+                if (gx === floor.ladders.down.x && gy === floor.ladders.down.y) {
+                    state.mine.currentFloor++;
+                    const nextFloor = state.mine.floors[state.mine.currentFloor];
+                    state.player.x = (nextFloor.ladders.up.x + 1.5) * TILE_SIZE; 
+                    state.player.y = (nextFloor.ladders.up.y + 0.5) * TILE_SIZE;
+                    state.transitioning = true;
+                    setTimeout(() => state.transitioning = false, 500);
+                } else if (gx === floor.ladders.up.x && gy === floor.ladders.up.y) {
+                    if (state.mine.currentFloor === 0) {
+                        state.view = 'world'; 
+                        state.player.x = 3.5 * TILE_SIZE; 
+                        state.player.y = 2.5 * TILE_SIZE;
+                        document.getElementById('mine-stats').classList.add('hidden');
+                    } else {
+                        state.mine.currentFloor--;
+                        const prevFloor = state.mine.floors[state.mine.currentFloor];
+                        state.player.x = (prevFloor.ladders.down.x - 0.5) * TILE_SIZE; 
+                        state.player.y = (prevFloor.ladders.down.y + 0.5) * TILE_SIZE;
+                    }
+                    state.transitioning = true;
+                    setTimeout(() => state.transitioning = false, 500);
+                }
+            }
+        }
+        state.player.animFrame++;
+    }
+
+    state.camera.x = state.player.x - canvas.width / 2;
+    state.camera.y = state.player.y - canvas.height / 2;
+
+    if (state.player.isUsingTool) {
+        state.player.toolFrame++;
+        if (state.player.toolFrame > 15) { state.player.isUsingTool = false; state.player.toolFrame = 0; }
+    }
+
+    // Creature AI
+    if (state.view === 'world') {
+        state.creatures.forEach(c => {
+            if (!c.captured) {
+                c.x += c.vx; c.y += c.vy;
+                if (c.x < 0 || c.x > WORLD_PIXELS) c.vx *= -1;
+                if (c.y < 0 || c.y > WORLD_PIXELS) c.vy *= -1;
+            }
+        });
+    }
+
+    state.frame++;
+    document.getElementById('resource-count').innerText = state.resources;
+    if (state.view === 'mine') {
+        document.getElementById('mine-depth').innerText = state.mine.currentFloor + 1;
+        document.getElementById('zone-name').innerText = "Ancient Mine";
+    } else {
+        document.getElementById('zone-name').innerText = "The Wilds";
+    }
+}
+
+function draw() {
+    if (!state.gameStarted) return;
+    ctx.clearRect(0,0,canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(-state.camera.x, -state.camera.y);
+
+    if (state.view === 'world') {
+        const swayCycle = Math.floor(state.frame / 20) % 4; // 3-frame sway logic (L, C, R, C)
+        const waterShimmer = (Math.sin(state.frame * 0.05) + 1) / 2;
+
+        state.grid.flat().forEach(t => {
+            const tx = t.x * TILE_SIZE, ty = t.y * TILE_SIZE;
+            if (tx < state.camera.x - TILE_SIZE || tx > state.camera.x + canvas.width || ty < state.camera.y - TILE_SIZE || ty > state.camera.y + canvas.height) return;
+
+            if (t.type === 'grass') {
+                ctx.fillStyle = '#3f6212'; ctx.fillRect(tx, ty, TILE_SIZE, TILE_SIZE);
+                ctx.strokeStyle = '#65a30d'; ctx.lineWidth = 2;
+                t.tufts.forEach(tuft => {
+                    ctx.beginPath(); ctx.moveTo(tx+tuft.lx, ty+tuft.ly);
+                    let lean = [0, -5, 0, 5][swayCycle]; // Left, Center, Right, Center
+                    ctx.lineTo(tx+tuft.lx+lean, ty+tuft.ly-tuft.size);
+                    ctx.stroke();
+                });
+            } else if (t.type === 'water') {
+                ctx.fillStyle = `rgb(30, ${60 + waterShimmer * 20}, ${150 + waterShimmer * 50})`;
+                ctx.fillRect(tx, ty, TILE_SIZE, TILE_SIZE);
+            } else if (t.type === 'stone') {
+                ctx.fillStyle = '#262626'; ctx.fillRect(tx, ty, TILE_SIZE, TILE_SIZE);
+            } else if (t.type === 'entrance') {
+                ctx.fillStyle = '#0a0a0a'; ctx.fillRect(tx, ty, TILE_SIZE, TILE_SIZE);
+                ctx.strokeStyle = '#444'; ctx.strokeRect(tx+4, ty+4, TILE_SIZE-8, TILE_SIZE-8);
+            } else {
+                ctx.fillStyle = '#78716c'; ctx.fillRect(tx, ty, TILE_SIZE, TILE_SIZE);
+            }
+        });
+
+        state.creatures.forEach(c => {
+            if (!c.captured) {
+                ctx.fillStyle = c.color; ctx.beginPath(); ctx.arc(c.x, c.y, 12, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = 'white'; ctx.fillRect(c.x-4, c.y-6, 3, 3); ctx.fillRect(c.x+1, c.y-6, 3, 3);
+            }
+        });
+    } else {
+        const floor = state.mine.floors[state.mine.currentFloor];
+        floor.grid.flat().forEach(t => {
+            const tx = t.x * TILE_SIZE, ty = t.y * TILE_SIZE;
+            if (t.type === 'wall') ctx.fillStyle = '#000';
+            else if (t.type === 'rock') ctx.fillStyle = '#444';
+            else if (t.type === 'copper') ctx.fillStyle = '#b45309';
+            else if (t.type === 'gem') ctx.fillStyle = '#ec4899';
+            else if (t.type === 'dirt') ctx.fillStyle = '#78350f';
+            else ctx.fillStyle = '#111';
+            ctx.fillRect(tx, ty, TILE_SIZE, TILE_SIZE);
+        });
+        // Ladders
+        ctx.fillStyle = 'yellow'; ctx.fillRect(floor.ladders.down.x*TILE_SIZE+10, floor.ladders.down.y*TILE_SIZE+10, 44, 44);
+        ctx.fillStyle = 'white'; ctx.fillRect(floor.ladders.up.x*TILE_SIZE+10, floor.ladders.up.y*TILE_SIZE+10, 44, 44);
+    }
+
+    drawPlayer(ctx, state.player.x, state.player.y, state.player.customization, state.player.moving, state.player.animFrame, state.player.dir, state.player.isUsingTool, state.player.toolFrame);
+    ctx.restore();
+    drawMinimap();
+}
+
+function drawMinimap() {
+    mCtx.fillStyle = 'black'; mCtx.fillRect(0,0,160,160);
+    if (state.view === 'world') {
+        const step = 160 / MAP_SIZE;
+        for(let y=0; y<MAP_SIZE; y+=2) {
+            for(let x=0; x<MAP_SIZE; x+=2) {
+                const t = state.grid[y][x];
+                mCtx.fillStyle = t.type === 'water' ? '#1e3a8a' : (t.type === 'stone' ? '#333' : '#365314');
+                if (t.type === 'entrance') mCtx.fillStyle = 'white';
+                mCtx.fillRect(x*step, y*step, step*2, step*2);
+            }
+        }
+        state.creatures.forEach(c => {
+            if (!c.captured) {
+                const cx = (c.x / WORLD_PIXELS) * 160;
+                const cy = (c.y / WORLD_PIXELS) * 160;
+                mCtx.fillStyle = c.color;
+                mCtx.fillRect(cx-1, cy-1, 3, 3);
+            }
+        });
+    } else {
+        const step = 160 / 25;
+        const floor = state.mine.floors[state.mine.currentFloor];
+        floor.grid.flat().forEach(t => {
+            if (t.type !== 'empty') { mCtx.fillStyle = '#444'; mCtx.fillRect(t.x*step, t.y*step, step, step); }
+        });
+    }
+    const mapX = (state.view === 'world') ? (state.player.x / WORLD_PIXELS * 160) : (state.player.x / (25 * TILE_SIZE) * 160);
+    const mapY = (state.view === 'world') ? (state.player.y / WORLD_PIXELS * 160) : (state.player.y / (25 * TILE_SIZE) * 160);
+    mCtx.fillStyle = 'white'; mCtx.fillRect(mapX-2, mapY-2, 4, 4);
+}
+
+function selectTool(tool) {
+    state.selectedTool = tool;
+    document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById(`btn-${tool}`).classList.add('active');
+}
+
+function startGame() {
+    state.gameStarted = true;
+    document.getElementById('character-creator').style.display = 'none';
+}
+
+function toggleCreatureModal() {
+    const modal = document.getElementById('creature-modal');
+    modal.classList.toggle('hidden');
+    if (!modal.classList.contains('hidden')) renderRoster();
+}
+
+function renderRoster() {
+    const list = document.getElementById('creature-list');
+    list.innerHTML = state.capturedList.map(c => `
+        <div class="bg-gray-800 p-3 rounded-lg border-2 border-gray-600 flex gap-4">
+            <div class="w-10 h-10 rounded-full" style="background:${c.color}"></div>
+            <div class="flex-1">
+                <div class="pixel-font text-[8px] text-yellow-400 mb-1">${c.name}</div>
+                <div class="text-[8px]">Farm: ${c.stats.farming.toFixed(0)} | Mine: ${c.stats.mining.toFixed(0)}</div>
+            </div>
+        </div>
+    `).join('') || '<div class="pixel-font text-gray-500 text-center w-full">NO CREATURES YET</div>';
+}
+
+function setCustom(key, val) { state.player.customization[key] = val; }
+
+window.addEventListener('keydown', e => state.keys[e.code] = true);
+window.addEventListener('keyup', e => state.keys[e.code] = false);
+window.addEventListener('wheel', e => {
+    const idx = TOOLS.indexOf(state.selectedTool);
+    let next = e.deltaY > 0 ? idx + 1 : idx - 1;
+    if (next < 0) next = TOOLS.length - 1;
+    if (next >= TOOLS.length) next = 0;
+    selectTool(TOOLS[next]);
+}, { passive: true });
+
+canvas.addEventListener('mousedown', e => {
+    if (!state.gameStarted) return;
+    const rect = canvas.getBoundingClientRect();
+    const wx = e.clientX - rect.left + state.camera.x;
+    const wy = e.clientY - rect.top + state.camera.y;
+    const gx = Math.floor(wx/TILE_SIZE);
+    const gy = Math.floor(wy/TILE_SIZE);
+
+    state.player.isUsingTool = true; state.player.toolFrame = 0;
+
+    if (state.selectedTool === 'capture') {
+        state.creatures.forEach(c => {
+            if (!c.captured && Math.hypot(c.x-wx, c.y-wy) < 50) {
+                c.captured = true; state.capturedList.push(c); state.capturedCount++;
+                document.getElementById('creature-count').innerText = state.capturedCount;
+            }
+        });
+    } else if (state.selectedTool === 'hoe' && state.view === 'world') {
+        if (state.grid[gy] && state.grid[gy][gx] && state.grid[gy][gx].type === 'grass') state.grid[gy][gx].farmState = 'tilled';
+    } else if (state.selectedTool === 'pickaxe' && state.view === 'mine') {
+        const floor = state.mine.floors[state.mine.currentFloor];
+        if (gx>=0 && gx<25 && gy>=0 && gy<25 && floor.grid[gy][gx].type !== 'empty' && floor.grid[gy][gx].type !== 'wall') {
+            floor.grid[gy][gx].hp--;
+            if (floor.grid[gy][gx].hp <= 0) {
+                state.resources += 10;
+                floor.grid[gy][gx].type = 'empty';
+            }
+        }
+    }
+});
+
+function updatePreview() {
+    const pCanvas = document.getElementById('previewCanvas');
+    if (!pCanvas) return;
+    const pCtx = pCanvas.getContext('2d');
+    pCtx.clearRect(0,0,128,160);
+    drawPlayer(pCtx, 48, 50, state.player.customization, true, Date.now()/50, 'down');
+    if (!state.gameStarted) requestAnimationFrame(updatePreview);
+}
+
+window.onload = () => {
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+    initWorld(); updatePreview();
+    function loop() { update(); draw(); requestAnimationFrame(loop); }
+    loop();
+};
+
+window.addEventListener('resize', () => {
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+});
+</script>
+</body>
+</html>
